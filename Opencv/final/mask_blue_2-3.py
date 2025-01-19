@@ -4,18 +4,16 @@ import os
 
 # 处理每一张图像
 def process_image(img):
-    img = cv.resize(img, (480, 640))
+    # img = cv.resize(img, (640, 640))
     hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
 
     # 蓝色范围
     lower_blue = np.array([100, 50, 50])
     upper_blue = np.array([140, 255, 255])
     mask_blue = cv.inRange(hsv, lower_blue, upper_blue)
-    # mask_blue = cv.GaussianBlur(mask_blue, (5, 5), 0, 0)
 
     # 反转mask蓝色区域
     mask2 = 255 - mask_blue
-    # mask2 = cv.GaussianBlur(mask2, (5, 5), 0, 0)
 
     # 阈值处理
     ret, binary = cv.threshold(mask_blue, 127, 255, cv.THRESH_BINARY)
@@ -38,8 +36,38 @@ def process_image(img):
     img = cv.cvtColor(img, cv.COLOR_BGRA2GRAY)
     ret, adapt = cv.threshold(img, 127, 255, cv.THRESH_BINARY)
     adapt = cv.bitwise_and(mid, adapt)
-
     return adapt
+
+# 通过掩码从原图裁剪出数字区域
+def cutting2(adapt, ori_image):
+    # 获取图像的高度和宽度
+    height, width = ori_image.shape[:2]
+
+    # 初始化裁剪图像为原图
+    cropped = ori_image.copy()
+
+    # 查找 adapt 区域的轮廓
+    contours, _ = cv.findContours(adapt, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+
+    for contour in contours:
+        # 获取轮廓的面积
+        size = cv.contourArea(contour)
+        if size < 100:  # 如果面积小于 100，跳过
+            continue
+
+        # 获取轮廓的最小外接矩形
+        x, y, w, h = cv.boundingRect(contour)
+
+        # 确保裁剪区域不会超出原图边界
+        x = max(0, x)  # 防止x小于0
+        y = max(0, y)  # 防止y小于0
+        x_end = min(x + w, width)  # 防止x + w超出宽度
+        y_end = min(y + h, height)  # 防止y + h超出高度
+
+        # 从原图中截取指定区域
+        cropped = ori_image[y:y_end, x:x_end]
+
+    return cropped
 
 
 # 批量处理图像并保存
@@ -56,22 +84,32 @@ def process_images(input_folder, output_folder):
         if file.endswith(('.png', '.jpg', '.jpeg', '.bmp')):  # 确保只处理图像文件
             img_path = os.path.join(input_folder, file)
             img = cv.imread(img_path)
+            ori = img  # 保存原图
+            cv.imshow('ori', ori)
+            # cv.waitKey()
 
             if img is None:
                 print(f"Error loading image: {file}")
                 continue
 
             # 处理图像
-            processed_img = process_image(img)
+            processed_img = process_image(img)  # adapt
+            # cv.waitKey()
 
-            # 自动编号并保存图像
+            # 使用 adapt 图像从 ori 图像中裁剪相应的部分
+            cropped_img = cutting2(processed_img, ori)
+            height, width, channels = cropped_img.shape
+            if height*width>10000 :
+                continue
+            if height*width<2000:
+                continue
+            # 自动编号并保存裁剪后的图像
             new_filename = f"image_{image_count:03d}.jpg"  # 使用3位数编号
             new_filepath = os.path.join(output_folder, new_filename)
-            cv.imwrite(new_filepath, processed_img)
+            cv.imwrite(new_filepath, cropped_img)
             print(f"Saved: {new_filepath}")
 
             image_count += 1  # 增加计数
-
 
 # 设置输入路径和输出路径
 input_folder = r'D:\pythonProject\image_2'  # 输入路径
